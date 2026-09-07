@@ -1,44 +1,51 @@
-import { Album } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from 'react';
+import { saveTracksToDB, getTracksFromDB } from '../utils/db';
 
 export const useLocalMusic = () => {
-    const [tracks, setTracks] = useState([]);
-    const [isLoading, setIsLoading] = useState(false);
+  const [tracks, setTracks] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
 
-    const handleFolderSelect = async (event) => {
-        const files = Array.from(event.target.files);
-        if (!files || files.length === 0 ) return;
-
+  useEffect(() => {
+    const loadSaved = async () => {
+      try {
         setIsLoading(true);
-
-        const audioFiles = files.filter((file) =>
-            ["audio/mpeg", "audio/wav", "audio/flac", "audio/aac", "audio/ogg", "audio/mp4"].includes(file.type) || file.name.match(/\.(mp3|wav|flac|m4a|ogg)$/i)
-        );
-
-        const parsedTracks = audioFiles.map((file, index) => {
-            const cleanName = file.name.replace(/\.[^/.]+$/, "");
-            const parts = cleanName.split("-");
-            const artist = parts.length > 1 ? parts[0].trim() : "Unknown Artist";
-            const title = parts.length > 1 ? parts.slice(1).join("-").trim() : cleanName;
-
-            return {
-                id: `local-${index}-${file.name}`,
-                title,
-                artist,
-                Album: "Local Library",
-                url: URL.createObjectURL(file),
-                file,
-                isLocal: true,
-            };
-        });
-
-        setTracks(parsedTracks);
+        const saved = await getTracksFromDB();
+        if (saved && saved.length > 0) {
+          setTracks(saved);
+        }
+      } catch (err) {
+        console.error('Kayıtlı müzikler yüklenemedi:', err);
+      } finally {
         setIsLoading(false);
+      }
     };
+    loadSaved();
+  }, []);
 
-    return {
-        tracks,
-        isLoading,
-        handleFolderSelect,
-    };
+  const handleFolderSelect = async (e) => {
+    const files = e.target?.files || e;
+    if (!files || files.length === 0) return;
+
+    setIsLoading(true);
+    const audioFiles = Array.from(files).filter(
+      (f) =>
+        f.type.startsWith('audio/') ||
+        f.name.endsWith('.mp3') ||
+        f.name.endsWith('.wav') ||
+        f.name.endsWith('.flac') ||
+        f.name.endsWith('.m4a')
+    );
+
+    try {
+      await saveTracksToDB(audioFiles);
+      const updatedTracks = await getTracksFromDB();
+      setTracks(updatedTracks);
+    } catch (err) {
+      console.error('Müzikler kaydedilirken hata oluştu:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return { tracks, isLoading, handleFolderSelect };
 };

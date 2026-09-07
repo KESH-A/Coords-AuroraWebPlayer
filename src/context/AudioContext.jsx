@@ -1,112 +1,154 @@
-import React, { createContext, useContext, useRef, useState } from 'react';
+import React, { createContext, useContext, useState, useRef, useEffect } from 'react';
+import { useSettings } from './SettingsContext';
 
-const AudioContextState = createContext(null);
+const AudioContext = createContext();
 
 export const AudioProvider = ({ children }) => {
+  const { fadeInTime } = useSettings();
+  const [currentTrack, setCurrentTrack] = useState(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+
   const audioRef = useRef(new Audio());
   const audioCtxRef = useRef(null);
-  const sourceNodeRef = useRef(null);
-  const analyserNodeRef = useRef(null);
+  const analyserRef = useRef(null);
   const gainNodeRef = useRef(null);
-  const eqFiltersRef = useRef([]);
+  const bandsRef = useRef([]);
+  const fadeIntervalRef = useRef(null);
 
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [currentTrack, setCurrentTrack] = useState(null);
-  const [volume, setVolume] = useState(1);
-  const [fadeInDuration, setFadeInDuration] = useState(2);
-
-  const initAudioNodes = () => {
+  const initWebAudio = () => {
     if (audioCtxRef.current) return;
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      const ctx = new AudioCtx();
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 32; // Kasma yapmaması için düşük FFT boyutu
+      
+      const gain = ctx.createGain();
+      const source = ctx.createMediaElementSource(audioRef.current);
 
-    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    const ctx = new AudioContextClass();
-    audioCtxRef.current = ctx;
+      // 5-Bant EQ Filtre Grubu
+      const freqs = [60, 230, 910, 4000, 14000];
+      const filters = freqs.map((f, i) => {
+        const filter = ctx.createBiquadFilter();
+        filter.type = i === 0 ? 'lowshelf' : i === 4 ? 'highshelf' : 'peaking';
+        filter.frequency.value = f;
+        filter.gain.value = 0;
+        return filter;
+      });
 
-    const analyser = ctx.createAnalyser();
-    analyser.fftSize = 128;
-    analyserNodeRef.current = analyser;
+      // Zirincir Bağlantısı: Source -> Filters -> Gain -> Analyser -> Destination
+      let current = source;
+      filters.forEach((filter) => {
+        current.connect(filter);
+        current = filter;
+      });
+      current.connect(gain);
+      gain.connect(analyser);
+      analyser.connect(ctx.destination);
 
-    const gainNode = ctx.createGain();
-    gainNodeRef.current = gainNode;
-
-    const frequencies = [60, 230, 910, 4000, 14000];
-    const filters = frequencies.map((freq) => {
-      const filter = ctx.createBiquadFilter();
-      filter.type = freq <= 230 ? 'lowshelf' : freq >= 4000 ? 'highshelf' : 'peaking';
-      filter.frequency.value = freq;
-      filter.gain.value = 0;
-      return filter;
-    });
-    eqFiltersRef.current = filters;
-
-    const source = ctx.createMediaElementSource(audioRef.current);
-    sourceNodeRef.current = source;
-
-    let current = source;
-    filters.forEach((filter) => {
-      current.connect(filter);
-      current = filter;
-    });
-    current.connect(gainNode);
-    gainNode.connect(analyser);
-    analyser.connect(ctx.destination);
+      audioCtxRef.current = ctx;
+      analyserRef.current = analyser;
+      gainNodeRef.current = gain;
+      bandsRef.current = filters;
+    } catch (e) {}
   };
 
+  const setEQBands = (gains) => {
+    if (!bandsRef.current.length) return;
+    gains.forEach((g, i) => {
+      if (bandsRef.current[i]) bandsRef.current[i].gain.value = g;
+    });
+  };
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    const handleTimeUpdate = () => setCurrentTime(audio.currentTime);
+    const handleLoadedMetadata = () => setDuration(audio.duration);
+    const handleEnded = () => setIsPlaying(false);
+
+    audio.addEventListener('timeupdate', handleTimeUpdate);
+    audio.addEventListener('loadedmetadata', handleLoadedMetadata);
+    audio.addEventListener('ended', handleEnded);
+
+    return () => {
+      audio.removeEventListener('timeupdate', handleTimeUpdate);
+      audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
+      audio.removeEventListener('ended', handleEnded);
+    };
+  }, []);
+
   const playTrack = (track) => {
-    initAudioNodes();
-    
-    if (audioCtxRef.current.state === 'suspended') {
+    if (!track) return;
+    initWebAudio();
+
+    if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
       audioCtxRef.current.resume();
     }
 
+    const audio = audioRef.current;
+    const audioSource = track.src || track.url;
+
     if (currentTrack?.id !== track.id) {
+      if (audioSource.startsWith('http')) audio.crossOrigin = 'anonymous';
+      else audio.removeAttribute('crossorigin');
+      audio.src = audioSource;
       setCurrentTrack(track);
-      audioRef.current.src = track.url;
     }
 
-    const gain = gainNodeRef.current.gain;
-    const ctxTime = audioCtxRef.current.currentTime;
+    if (fadeIntervalRef.current) clearInterval(fadeIntervalRef.current);
 
-    if (fadeInDuration > 0) {
-      gain.setValueAtTime(0, ctxTime);
-      gain.linearRampToValueAtTime(volume, ctxTime + fadeInDuration);
+    if (fadeInTime > 0) {
+      audio.volume = 0;
+      audio.play().then(() => {
+        setIsPlaying(true);
+        const step = 0.05;
+        const intervalTime = (fadeInTime * 1000) / (1 / step);
+        fadeIntervalRef.current = setInterval(() => {
+          if (audio.volume + step >= 1) {
+            audio.volume = 1;
+            clearInterval(fadeIntervalRef.current);
+          } else {
+            audio.volume += step;
+          }
+        }, intervalTime);
+      }).catch(() => {});
     } else {
-      gain.setValueAtTime(volume, ctxTime);
+      audio.volume = 1;
+      audio.play().then(() => setIsPlaying(true)).catch(() => {});
     }
-
-    audioRef.current.play();
-    setIsPlaying(true);
   };
 
   const pauseTrack = () => {
+    if (fadeIntervalRef.current) clearInterval(fadeIntervalRef.current);
     audioRef.current.pause();
     setIsPlaying(false);
   };
 
-  const setEQGain = (bandIndex, gainValue) => {
-    if (eqFiltersRef.current[bandIndex]) {
-      eqFiltersRef.current[bandIndex].gain.value = gainValue;
-    }
+  const seek = (time) => {
+    audioRef.current.currentTime = time;
+    setCurrentTime(time);
   };
 
   return (
-    <AudioContextState.Provider
+    <AudioContext.Provider
       value={{
-        isPlaying,
         currentTrack,
+        isPlaying,
+        currentTime,
+        duration,
         playTrack,
         pauseTrack,
-        volume,
-        setVolume,
-        fadeInDuration,
-        setFadeInDuration,
-        setEQGain,
-        analyserNode: analyserNodeRef.current,
+        seek,
+        audioRef,
+        analyserRef,
+        setEQBands,
       }}
     >
       {children}
-    </AudioContextState.Provider>
+    </AudioContext.Provider>
   );
 };
 
-export const useAudio = () => useContext(AudioContextState);
+export const useAudio = () => useContext(AudioContext);
