@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useSettings, PRESET_COLORS } from '../../context/SettingsContext';
-import { X, Sliders, Eye, Waves, Sparkles, Palette, FolderPlus, Pipette } from 'lucide-react';
+import { useSettings, PRESET_COLORS, PRESET_TEXT_COLORS } from '../../context/SettingsContext';
+import { X, Sliders, Eye, Sparkles, Palette, FolderPlus, Pipette, Type, Smartphone, Zap } from 'lucide-react';
 
 export const SettingsModal = ({ isOpen, onClose, onFolderSelect, isLoading }) => {
   const {
@@ -10,8 +10,14 @@ export const SettingsModal = ({ isOpen, onClose, onFolderSelect, isLoading }) =>
     setThemeStyle,
     accentColor,
     setAccentColor,
-    fadeInTime,
-    setFadeInTime,
+    textColor,
+    setTextColor,
+    lockScreenControls,
+    setLockScreenControls,
+    audioPreloading,
+    setAudioPreloading,
+    crossfadeDuration,
+    setCrossfadeDuration,
   } = useSettings();
 
   const [shouldRender, setShouldRender] = useState(isOpen);
@@ -31,27 +37,25 @@ export const SettingsModal = ({ isOpen, onClose, onFolderSelect, isLoading }) =>
   if (!shouldRender) return null;
 
   const containerStyle = themeStyle === 'glass'
-    ? 'glass-modal shadow-2xl border-white/15'
-    : 'bg-[#0d111d]/90 border-white/10 shadow-none';
+    ? 'glass glass-modal shadow-2xl border-white/15'
+    : 'theme-transparent shadow-none';
 
   return (
     <>
       <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 glass-overlay">
-        {/* Morph & Translate Animasyonlu Ana Konteyner */}
-        <div className={`relative w-full max-w-md rounded-3xl p-6 text-white border transition-all duration-400 backdrop-blur-2xl ${containerStyle} ${animationClass}`}>
-          
+        <div className={`relative w-full max-w-md p-6 border transition-all duration-300 backdrop-blur-2xl ${containerStyle} ${animationClass}`}>
           <div className="flex items-center justify-between pb-4 mb-4 border-b border-white/10">
             <div className="flex items-center gap-2">
               <Sliders className="w-5 h-5" style={{ color: accentColor }} />
-              <h2 className="text-lg font-bold">Settings</h2>
+              <h2 className="text-lg font-bold" style={{ color: textColor }}>Settings</h2>
             </div>
             <button onClick={onClose} className="p-2 rounded-full bg-white/5 hover:bg-white/10 transition-all">
-              <X className="w-5 h-5" />
+              <X className="w-5 h-5" style={{ color: textColor }} />
             </button>
           </div>
 
-          <div className="space-y-6 max-h-[60vh] overflow-y-auto px-1 py-1 custom-scrollbar">
-            {/* Music Library Import */}
+          <div className="space-y-6 max-h-[60vh] overflow-y-auto px-1 py-1 no-scrollbar">
+            {/* Music Folder Import */}
             <div className="space-y-2">
               <label className="text-xs font-semibold text-slate-400 flex items-center gap-1.5">
                 <FolderPlus className="w-4 h-4" style={{ color: accentColor }} /> Music Library
@@ -74,6 +78,62 @@ export const SettingsModal = ({ isOpen, onClose, onFolderSelect, isLoading }) =>
                   className="hidden"
                 />
               </label>
+            </div>
+
+            {/* Lock Screen Controls Toggle */}
+            <div className="flex items-center justify-between p-3 rounded-2xl bg-white/5 border border-white/10">
+              <div className="space-y-0.5">
+                <label className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                  <Smartphone className="w-4 h-4" style={{ color: accentColor }} /> Lock Screen Controls
+                </label>
+                <p className="text-[10px] text-slate-400">Sync track metadata & system notifications</p>
+              </div>
+              <button
+                onClick={() => setLockScreenControls(!lockScreenControls)}
+                className="w-11 h-6 rounded-full p-1 transition-colors duration-200 ease-in-out cursor-pointer"
+                style={{ backgroundColor: lockScreenControls ? accentColor : 'rgba(255, 255, 255, 0.2)' }}
+              >
+                <div
+                  className={`w-4 h-4 rounded-full bg-black transition-transform duration-200 ease-in-out ${
+                    lockScreenControls ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+
+            {/* Audio Preloading / Gapless Toggle */}
+            <div className="flex items-center justify-between p-3 rounded-2xl bg-white/5 border border-white/10">
+              <div className="space-y-0.5">
+                <label className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                  <Zap className="w-4 h-4" style={{ color: accentColor }} /> Audio Preloading (Gapless)
+                </label>
+                <p className="text-[10px] text-slate-400">Preload next track in queue for instant playback</p>
+              </div>
+              <button
+                onClick={() => setAudioPreloading(!audioPreloading)}
+                className="w-11 h-6 rounded-full p-1 transition-colors duration-200 ease-in-out cursor-pointer"
+                style={{ backgroundColor: audioPreloading ? accentColor : 'rgba(255, 255, 255, 0.2)' }}
+              >
+                <div
+                  className={`w-4 h-4 rounded-full bg-black transition-transform duration-200 ease-in-out ${
+                    audioPreloading ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+
+
+            {/* Crossfade Duration */}
+            <div className="p-3 rounded-2xl bg-white/5 border border-white/10 space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                  <Sliders className="w-4 h-4" style={{ color: accentColor }} /> Crossfade</label>
+                <span className="text-[11px] font-mono" style={{ color: accentColor }}>{crossfadeDuration}s</span>
+              </div>
+              <input type="range" min="0" max="15" step="1" value={crossfadeDuration}
+                onChange={(e) => setCrossfadeDuration(Number(e.target.value))}
+                className="w-full h-1 bg-white/20 rounded-lg appearance-none cursor-pointer" style={{ accentColor: activeColor }} />
+              <p className="text-[10px] text-slate-400">Equal-power blend between tracks (0 = instant cut)</p>
             </div>
 
             {/* Accent Color Presets */}
@@ -111,6 +171,41 @@ export const SettingsModal = ({ isOpen, onClose, onFolderSelect, isLoading }) =>
               </div>
             </div>
 
+            {/* Text Color Presets */}
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-slate-400 flex items-center gap-1.5">
+                <Type className="w-4 h-4" style={{ color: accentColor }} /> Text Color Presets
+              </label>
+              <div className="grid grid-cols-4 gap-2">
+                {PRESET_TEXT_COLORS.map((p) => {
+                  const isSelected = textColor.toLowerCase() === p.hex.toLowerCase();
+                  return (
+                    <button
+                      key={p.hex}
+                      onClick={() => setTextColor(p.hex)}
+                      className={`h-10 rounded-xl flex items-center justify-center text-[11px] font-bold transition-all border ${
+                        isSelected ? 'border-2 border-purple-400 scale-100 shadow-md' : 'border-white/10 bg-white/5 hover:bg-white/10'
+                      }`}
+                      style={{ color: p.hex }}
+                    >
+                      <span>{p.name}</span>
+                    </button>
+                  );
+                })}
+
+                <label className="h-10 rounded-xl border border-dashed border-white/30 flex items-center justify-center gap-1 cursor-pointer bg-white/5 hover:bg-white/10 transition-all">
+                  <Pipette className="w-3.5 h-3.5 text-slate-300" />
+                  <span className="text-[10px] font-bold text-slate-300">Custom</span>
+                  <input
+                    type="color"
+                    value={textColor}
+                    onChange={(e) => setTextColor(e.target.value)}
+                    className="w-0 h-0 opacity-0 pointer-events-none"
+                  />
+                </label>
+              </div>
+            </div>
+
             {/* Interface Style */}
             <div className="space-y-2">
               <label className="text-xs font-semibold text-slate-400 flex items-center gap-1.5">
@@ -123,7 +218,7 @@ export const SettingsModal = ({ isOpen, onClose, onFolderSelect, isLoading }) =>
                     themeStyle === 'glass' ? 'bg-white/20 text-white shadow-sm' : 'text-slate-400 hover:text-white'
                   }`}
                 >
-                  Glass (Low Blur)
+                  Glass (Distortion)
                 </button>
                 <button
                   onClick={() => setThemeStyle('transparent')}
@@ -136,7 +231,7 @@ export const SettingsModal = ({ isOpen, onClose, onFolderSelect, isLoading }) =>
               </div>
             </div>
 
-            {/* List Scroll Animation */}
+            {/* Scroll Animation */}
             <div className="space-y-2">
               <label className="text-xs font-semibold text-slate-400 flex items-center gap-1.5">
                 <Sparkles className="w-4 h-4" style={{ color: accentColor }} /> List Scroll Animation
@@ -155,23 +250,6 @@ export const SettingsModal = ({ isOpen, onClose, onFolderSelect, isLoading }) =>
                 <option value="fade" className="bg-slate-900">Fade</option>
               </select>
             </div>
-
-            {/* Fade-In Speed */}
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-slate-400 flex items-center gap-1.5">
-                <Waves className="w-4 h-4" style={{ color: accentColor }} /> Fade-In Speed ({fadeInTime}s)
-              </label>
-              <input
-                type="range"
-                min="0"
-                max="5"
-                step="0.5"
-                value={fadeInTime}
-                onChange={(e) => setFadeInTime(Number(e.target.value))}
-                className="w-full h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer"
-                style={{ accentColor }}
-              />
-            </div>
           </div>
         </div>
       </div>
@@ -180,7 +258,7 @@ export const SettingsModal = ({ isOpen, onClose, onFolderSelect, isLoading }) =>
         <div className="fixed inset-0 z-[400] flex items-center justify-center glass-overlay">
           <div className="p-8 rounded-3xl glass-modal flex flex-col items-center gap-4 shadow-2xl">
             <div className="w-10 h-10 border-4 border-purple-500/30 border-t-purple-500 rounded-full animate-spin" />
-            <p className="text-xs font-semibold text-slate-300">Müzikler Yükleniyor...</p>
+            <p className="text-xs font-semibold text-slate-300">Loading tracks...</p>
           </div>
         </div>
       )}

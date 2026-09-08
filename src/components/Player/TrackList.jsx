@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { useAudio } from '../../context/AudioContext';
 import { useSettings } from '../../context/SettingsContext';
 import { Play, Pause, Music } from 'lucide-react';
@@ -7,8 +7,8 @@ import defaultProfile from '../../assets/Profile.avif';
 const ITEM_HEIGHT = 84;
 
 export const TrackList = ({ tracks, scrollTop = 0, containerHeight = 600 }) => {
-  const { playTrack, currentTrack, isPlaying } = useAudio();
-  const { scrollAnimation } = useSettings();
+  const { playTrack, pauseTrack, currentTrack, isPlaying } = useAudio();
+  const { scrollAnimation, accentColor, textColor, themeStyle } = useSettings();
 
   const getAnimationClass = () => {
     switch (scrollAnimation) {
@@ -33,10 +33,13 @@ export const TrackList = ({ tracks, scrollTop = 0, containerHeight = 600 }) => {
 
   const visibleCount = Math.ceil(containerHeight / ITEM_HEIGHT);
   const totalHeight = tracks.length * ITEM_HEIGHT;
-  
+
   const startIndex = Math.max(0, Math.floor(scrollTop / ITEM_HEIGHT) - 3);
   const endIndex = Math.min(tracks.length, startIndex + visibleCount + 6);
   const visibleTracks = tracks.slice(startIndex, endIndex);
+
+  const activeColor = accentColor || '#9333ea';
+  const itemThemeClass = themeStyle === 'glass' ? 'glass' : 'theme-transparent';
 
   return (
     <div style={{ height: `${totalHeight}px`, position: 'relative', width: '100%' }}>
@@ -59,10 +62,14 @@ export const TrackList = ({ tracks, scrollTop = 0, containerHeight = 600 }) => {
             <div
               key={track.id || actualIndex}
               onClick={() => playTrack(track)}
-              style={{ height: `${ITEM_HEIGHT - 10}px` }}
-              className={`flex items-center justify-between p-3 px-4 rounded-2xl cursor-pointer border backdrop-blur-xl transition-all duration-200 active:scale-[0.98] ${getAnimationClass()} ${
+              style={{
+                height: `${ITEM_HEIGHT - 10}px`,
+                backgroundColor: isSelected ? `${activeColor}40` : undefined,
+                borderColor: isSelected ? `${activeColor}80` : undefined,
+              }}
+              className={`${itemThemeClass} flex items-center justify-between p-3 px-4 rounded-2xl cursor-pointer border backdrop-blur-xl transition-all duration-200 active:scale-[0.98] ${getAnimationClass()} ${
                 isSelected
-                  ? 'bg-purple-600/35 border-purple-400/60 text-white shadow-xl shadow-purple-950/40'
+                  ? 'text-white shadow-xl shadow-purple-950/40'
                   : 'bg-white/5 border-white/10 text-slate-200 hover:bg-white/10'
               }`}
             >
@@ -80,16 +87,32 @@ export const TrackList = ({ tracks, scrollTop = 0, containerHeight = 600 }) => {
                 </div>
 
                 <div className="truncate">
-                  <p className="text-sm font-bold truncate text-white">{track.title}</p>
+                  <p
+                    className="text-sm font-bold truncate"
+                    style={{ color: isSelected ? '#ffffff' : (textColor || '#ffffff') }}
+                  >
+                    {track.title}
+                  </p>
                   <p className="text-xs text-slate-400 truncate mt-1">{track.artist || 'Local Track'}</p>
                 </div>
               </div>
 
-              <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 border transition-all ${
-                isTrackPlaying 
-                  ? 'bg-purple-500 border-purple-300 shadow-md shadow-purple-500/30' 
-                  : 'bg-white/10 border-white/15'
-              }`}>
+              <div
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (isTrackPlaying) {
+                    pauseTrack();
+                  } else {
+                    playTrack(track);
+                  }
+                }}
+                className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 border transition-all cursor-pointer hover:scale-110 active:scale-95"
+                style={{
+                  backgroundColor: isTrackPlaying ? activeColor : 'rgba(255, 255, 255, 0.1)',
+                  borderColor: isTrackPlaying ? activeColor : 'rgba(255, 255, 255, 0.15)',
+                  boxShadow: isTrackPlaying ? `0 0 12px ${activeColor}80` : undefined,
+                }}
+              >
                 {isTrackPlaying ? (
                   <Pause className="w-4 h-4 text-white fill-white" />
                 ) : (
