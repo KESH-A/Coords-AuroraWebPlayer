@@ -21,6 +21,13 @@ export const FavoritesProvider = ({ children }) => {
 
   const isFavorite = (id) => favorites.includes(id);
 
+  const clearAllFavorites = () => { setFavorites([]); };
+
+  const reorderFavorites = (nextIds) => {
+    if (!Array.isArray(nextIds)) return;
+    setFavorites(nextIds);
+  };
+
   const toggleFavorite = (id) => {
     if (!id) return;
     setFavorites((prev) =>
@@ -29,7 +36,7 @@ export const FavoritesProvider = ({ children }) => {
   };
 
   return (
-    <FavoritesContext.Provider value={{ favorites, isFavorite, toggleFavorite }}>
+    <FavoritesContext.Provider value={{ favorites, isFavorite, toggleFavorite, reorderFavorites, clearAllFavorites }}>
       {children}
     </FavoritesContext.Provider>
   );

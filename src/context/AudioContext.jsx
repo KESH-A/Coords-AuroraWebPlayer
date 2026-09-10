@@ -1,5 +1,6 @@
-﻿import React, { createContext, useContext, useState, useRef, useEffect } from 'react';
+import React, { createContext, useContext, useState, useRef, useEffect } from 'react';
 import { useSettings } from './SettingsContext';
+import { loadPersistedState, savePersistedState } from '../utils/persistence';
 
 const AudioCtx = createContext();
 
@@ -11,13 +12,13 @@ export const AudioProvider = ({ children }) => {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolumeState] = useState(1);
+  const [isMuted, setIsMuted] = useState(false);
   const [playbackMode, setPlaybackModeState] = useState('off');
   const [playlist, setPlaylistState] = useState([]);
 
-  // Dual-slot audio elements for true crossfade
   const slotA = useRef(new Audio());
   const slotB = useRef(new Audio());
-  const currentSlot = useRef('A');
+  const currentSlotRef = useRef('A');
   const isCrossfading = useRef(false);
   const crossfadeTimer = useRef(null);
   const pendingNextTrack = useRef(null);
@@ -29,21 +30,51 @@ export const AudioProvider = ({ children }) => {
   const crossfadeGainA = useRef(null);
   const crossfadeGainB = useRef(null);
   const bandsRef = useRef([]);
+  const playedHistoryRef = useRef([]);
+  const mutedRef = useRef(false);
 
   const playbackModeRef = useRef(playbackMode);
   const playlistRef = useRef(playlist);
   const currentTrackRef = useRef(currentTrack);
   const volumeRef = useRef(1);
+  const persistedTrackIdRef = useRef(null);
   const crossfadeDurRef = useRef(crossfadeDuration);
 
   useEffect(() => {
     crossfadeDurRef.current = crossfadeDuration;
   }, [crossfadeDuration]);
 
-  const activeEl = () => currentSlot.current === 'A' ? slotA.current : slotB.current;
-  const inactiveEl = () => currentSlot.current === 'A' ? slotB.current : slotA.current;
-  const activeCG = () => currentSlot.current === 'A' ? crossfadeGainA.current : crossfadeGainB.current;
-  const inactiveCG = () => currentSlot.current === 'A' ? crossfadeGainB.current : crossfadeGainA.current;
+  useEffect(() => {
+    const saved = loadPersistedState();
+    if (saved.playbackMode) setPlaybackModeState(saved.playbackMode);
+    if (typeof saved.volume === 'number') setVolume(saved.volume);
+    if (saved.currentTrackId) persistedTrackIdRef.current = saved.currentTrackId;
+  }, []);
+
+  useEffect(() => {
+    savePersistedState({ playbackMode, volume });
+  }, [playbackMode, volume]);
+
+  useEffect(() => {
+    if (playlist.length > 0 && persistedTrackIdRef.current && !currentTrack) {
+      const found = playlist.find(t => t.id === persistedTrackIdRef.current);
+      if (found) {
+        setCurrentTrack(found);
+        currentTrackRef.current = found;
+      }
+    }
+  }, [playlist, currentTrack]);
+
+  useEffect(() => {
+    if (currentTrack) {
+      savePersistedState({ currentTrackId: currentTrack.id });
+    }
+  }, [currentTrack]);
+
+  const activeEl = () => currentSlotRef.current === 'A' ? slotA.current : slotB.current;
+  const inactiveEl = () => currentSlotRef.current === 'A' ? slotB.current : slotA.current;
+  const activeCG = () => currentSlotRef.current === 'A' ? crossfadeGainA.current : crossfadeGainB.current;
+  const inactiveCG = () => currentSlotRef.current === 'A' ? crossfadeGainB.current : crossfadeGainA.current;
 
   const setPlaybackMode = (mode) => {
     playbackModeRef.current = mode;
@@ -60,9 +91,21 @@ export const AudioProvider = ({ children }) => {
     const clamped = Math.min(1, Math.max(0, v));
     setVolumeState(clamped);
     volumeRef.current = clamped;
-    if (slotA.current) slotA.current.volume = clamped;
-    if (slotB.current) slotB.current.volume = clamped;
+    if (!mutedRef.current) {
+      if (slotA.current) slotA.current.volume = clamped;
+      if (slotB.current) slotB.current.volume = clamped;
+    }
     if (masterGainRef.current) masterGainRef.current.gain.value = clamped;
+  };
+
+  const toggleMute = () => {
+    const next = !mutedRef.current;
+    mutedRef.current = next;
+    setIsMuted(next);
+    const effective = next ? 0 : volumeRef.current;
+    if (slotA.current) slotA.current.volume = effective;
+    if (slotB.current) slotB.current.volume = effective;
+    if (masterGainRef.current) masterGainRef.current.gain.value = effective;
   };
 
   const initWebAudio = () => {
@@ -121,6 +164,18 @@ export const AudioProvider = ({ children }) => {
     });
   };
 
+  const setBassBoost = (val) => {
+    const clamped = Math.min(100, Math.max(0, Number(val)));
+    const gain = (clamped - 40) / 20 * 6;
+    if (bandsRef.current[0]) bandsRef.current[0].gain.value = gain;
+  };
+
+  const setLoudness = (val) => {
+    const clamped = Math.min(100, Math.max(0, Number(val)));
+    const gain = (clamped - 60) / 40 * 6;
+    if (bandsRef.current[4]) bandsRef.current[4].gain.value = gain;
+  };
+
   const getNextTrackToPlay = () => {
     const list = playlistRef.current;
     if (!list || list.length === 0) return null;
@@ -152,6 +207,7 @@ export const AudioProvider = ({ children }) => {
 
   const startCrossfade = () => {
     if (isCrossfading.current) return;
+    if (crossfadeTimer.current) { clearTimeout(crossfadeTimer.current); crossfadeTimer.current = null; }
     const next = getNextTrackToPlay();
     if (!next) return;
     const ctx = audioCtxRef.current;
@@ -186,24 +242,43 @@ export const AudioProvider = ({ children }) => {
   };
 
   const completeCrossfade = () => {
-    const ctx = audioCtxRef.current;
-    const oldEl = activeEl();
-    oldEl.pause();
-    oldEl.src = '';
-    currentSlot.current = currentSlot.current === 'A' ? 'B' : 'A';
+    if (crossfadeTimer.current) { clearTimeout(crossfadeTimer.current); crossfadeTimer.current = null; }
+    if (!isCrossfading.current) return;
     isCrossfading.current = false;
+
+    const ctx = audioCtxRef.current;
+    const newActiveEl = inactiveEl();
+    const oldActiveEl = activeEl();
+
+    oldActiveEl.pause();
+    oldActiveEl.src = '';
+    try { oldActiveEl.load(); } catch (e) {}
+
+    currentSlotRef.current = currentSlotRef.current === 'A' ? 'B' : 'A';
+
     if (ctx) {
       const now = ctx.currentTime;
-      const cgA = crossfadeGainA.current;
-      const cgB = crossfadeGainB.current;
-      if (cgA) { cgA.gain.cancelScheduledValues(now); cgA.gain.setValueAtTime(1, now); }
-      if (cgB) { cgB.gain.cancelScheduledValues(now); cgB.gain.setValueAtTime(0, now); }
+      const newCG = activeCG();
+      const oldCG = inactiveCG();
+      if (newCG) { newCG.gain.cancelScheduledValues(now); newCG.gain.setValueAtTime(1, now); }
+      if (oldCG) { oldCG.gain.cancelScheduledValues(now); oldCG.gain.setValueAtTime(0, now); }
     }
+
     if (pendingNextTrack.current) {
+      const _oldTrack = currentTrackRef.current;
+      if (_oldTrack && playedHistoryRef.current[playedHistoryRef.current.length - 1]?.id !== _oldTrack.id) {
+        playedHistoryRef.current.push(_oldTrack);
+      }
       setCurrentTrack(pendingNextTrack.current);
       currentTrackRef.current = pendingNextTrack.current;
       pendingNextTrack.current = null;
     }
+
+    const otherEl = inactiveEl();
+    otherEl.pause();
+    otherEl.src = '';
+    try { otherEl.load(); } catch (e) {}
+
     preloadNextTrack();
   };
 
@@ -230,9 +305,14 @@ export const AudioProvider = ({ children }) => {
     if (!track) return;
     initWebAudio();
     cancelCrossfade();
+    cleanupPreload();
     const audio = activeEl();
     const src = track.url || track.src;
     if (currentTrackRef.current?.id !== track.id) {
+      const _prevTrack = currentTrackRef.current;
+      if (_prevTrack && playedHistoryRef.current[playedHistoryRef.current.length - 1]?.id !== _prevTrack.id) {
+        playedHistoryRef.current.push(_prevTrack);
+      }
       audio.src = src;
       audio.load();
     }
@@ -247,9 +327,9 @@ export const AudioProvider = ({ children }) => {
       icg.gain.cancelScheduledValues(now);
       icg.gain.setValueAtTime(0, now);
     }
+    setCurrentTrack(track);
+    currentTrackRef.current = track;
     audio.play().then(() => {
-      setCurrentTrack(track);
-      currentTrackRef.current = track;
       setIsPlaying(true);
       const ctx2 = audioCtxRef.current;
       if (ctx2 && ctx2.state === 'suspended') ctx2.resume();
@@ -295,12 +375,26 @@ export const AudioProvider = ({ children }) => {
     cancelCrossfade();
     const audio = activeEl();
     if (audio.currentTime > 3) { audio.currentTime = 0; setCurrentTime(0); return; }
+    const history = playedHistoryRef.current;
+    if (history.length > 0) {
+      const prev = history.pop();
+      playTrack(prev);
+      return;
+    }
     const list = playlistRef.current;
     if (!list || list.length === 0) return;
     const cur = currentTrackRef.current;
     const idx = list.findIndex((t) => t.id === cur?.id);
     const prevIdx = idx > 0 ? idx - 1 : list.length - 1;
     playTrack(list[prevIdx]);
+  };
+
+  const cleanupPreload = () => {
+    if (preloadAudioRef.current) {
+      preloadAudioRef.current.pause();
+      preloadAudioRef.current.src = '';
+      preloadAudioRef.current.load();
+    }
   };
 
   const preloadNextTrack = () => {
@@ -339,22 +433,23 @@ export const AudioProvider = ({ children }) => {
       const dur = crossfadeDurRef.current;
       if (dur <= 0) playNext(false);
     };
-    const a = slotA.current;
-    const b = slotB.current;
-    a.addEventListener('timeupdate', handleTimeUpdate);
-    b.addEventListener('timeupdate', handleTimeUpdate);
-    a.addEventListener('loadedmetadata', handleLoadedMetadata);
-    b.addEventListener('loadedmetadata', handleLoadedMetadata);
-    a.addEventListener('ended', handleEnded);
-    b.addEventListener('ended', handleEnded);
-    return () => {
-      a.removeEventListener('timeupdate', handleTimeUpdate);
-      b.removeEventListener('timeupdate', handleTimeUpdate);
-      a.removeEventListener('loadedmetadata', handleLoadedMetadata);
-      b.removeEventListener('loadedmetadata', handleLoadedMetadata);
-      a.removeEventListener('ended', handleEnded);
-      b.removeEventListener('ended', handleEnded);
+    const slots = [slotA.current, slotB.current];
+    const cleanup = () => {
+      slots.forEach((el) => {
+        if (!el) return;
+        el.removeEventListener('timeupdate', handleTimeUpdate);
+        el.removeEventListener('loadedmetadata', handleLoadedMetadata);
+        el.removeEventListener('ended', handleEnded);
+      });
     };
+    cleanup();
+    slots.forEach((el) => {
+      if (!el) return;
+      el.addEventListener('timeupdate', handleTimeUpdate);
+      el.addEventListener('loadedmetadata', handleLoadedMetadata);
+      el.addEventListener('ended', handleEnded);
+    });
+    return cleanup;
   }, [audioPreloading, playbackMode]);
 
   useEffect(() => {
@@ -406,6 +501,26 @@ export const AudioProvider = ({ children }) => {
     }
   }, [currentTrack, isPlaying, lockScreenControls, duration]);
 
+  // 60 FPS-synced progress polling: keeps time-related state in sync with the
+  // compositor via requestAnimationFrame (no jank, no reliance on ~4Hz timeupdate).
+  useEffect(() => {
+    let raf = 0;
+    let lastReported = -1;
+    const loop = () => {
+      raf = requestAnimationFrame(loop);
+      const el = activeEl();
+      if (!el) return;
+      const t = el.currentTime;
+      if (!isNaN(t) && Math.abs(t - lastReported) > 0.03) {
+        lastReported = t;
+        setCurrentTime(t);
+        if (!isNaN(el.duration)) setDuration(el.duration);
+      }
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
   return (
     <AudioCtx.Provider
       value={{
@@ -423,10 +538,15 @@ export const AudioProvider = ({ children }) => {
         playPrev,
         seek,
         audioRef: slotA,
+        audioRefB: slotB,
         analyserRef,
         setEQBands,
+        setBassBoost,
+        setLoudness,
         volume,
         setVolume,
+        isMuted,
+        toggleMute,
       }}
     >
       {children}

@@ -3,6 +3,7 @@ import { useAudio } from '../../context/AudioContext';
 import { useSettings } from '../../context/SettingsContext';
 import { useFavorites } from '../../context/FavoritesContext';
 import { EqualizerPanel } from './EqualizerPanel';
+import { VisualizerCanvas } from './VisualizerCanvas';
 import defaultProfile from '../../assets/Profile.avif';
 import {
   ChevronDown, Sliders, Heart, Repeat, Repeat1, Shuffle,
@@ -15,17 +16,17 @@ export const ActivePlayerModal = ({ isOpen, onClose, tracks = [] }) => {
     seek, currentTime, duration, analyserRef, playbackMode, setPlaybackMode,
     setPlaylist, volume, setVolume,
   } = useAudio();
-  const { accentColor, textColor, themeStyle } = useSettings();
+  const { accentColor, textColor, themeStyle, visualizer, setVisualizer, gradientColors } = useSettings();
   const { isFavorite, toggleFavorite } = useFavorites();
 
   const [showEQ, setShowEQ] = useState(false);
-  const [showSpectrum, setShowSpectrum] = useState(true);
   const [isClosing, setIsClosing] = useState(false);
   const [slideDirection, setSlideDirection] = useState('');
   const [isAnimating, setIsAnimating] = useState(false);
   const [brightness, setBrightness] = useState(100);
+  const [shouldRender, setShouldRender] = useState(false);
+  const [animationClass, setAnimationClass] = useState('animate-mac-expand');
 
-  // Gesture state
   const [gestureType, setGestureType] = useState(null);
   const [gestureValue, setGestureValue] = useState(0);
   const [swipeOffset, setSwipeOffset] = useState(0);
@@ -35,52 +36,32 @@ export const ActivePlayerModal = ({ isOpen, onClose, tracks = [] }) => {
   const lastTap = useRef(0);
 
   const modalRef = useRef(null);
-  const canvasRef = useRef(null);
-  const animFrameRef = useRef(null);
+  const eqPanelRef = useRef(null);
 
   const fav = currentTrack ? isFavorite(currentTrack.id) : false;
 
-  // Liquid animation via WAAPI
-  useEffect(() => {
-    const el = modalRef.current;
-    if (!el) return;
-    if (isOpen && !isClosing) {
-      el.style.display = 'flex';
-      el.animate(
-        [
-          { opacity: 0, transform: 'scale(0.15) translateY(60vh)', borderRadius: '50%', filter: 'blur(8px)' },
-          { opacity: 1, transform: 'scale(1.12) translateY(-3vh)', borderRadius: '28px', filter: 'blur(0px)', offset: 0.35 },
-          { transform: 'scale(0.94) translateY(1vh)', borderRadius: '22px', offset: 0.55 },
-          { transform: 'scale(1.04) translateY(-0.5vh)', borderRadius: '18px', offset: 0.75 },
-          { opacity: 1, transform: 'scale(1) translateY(0)', borderRadius: '16px', filter: 'blur(0px)' },
-        ],
-        { duration: 600, easing: 'cubic-bezier(0.68, -0.6, 0.32, 1.6)', fill: 'forwards' }
-      );
-    }
-  }, [isOpen]);
+  const activeColor = (themeStyle === 'gradient' && gradientColors && gradientColors.length >= 2)
+    ? gradientColors[0]
+    : (accentColor || '#f59e0b');
 
   useEffect(() => {
-    const el = modalRef.current;
-    if (!el) return;
-    if (isClosing) {
-      const anim = el.animate(
-        [
-          { opacity: 1, transform: 'scale(1) translateY(0)', borderRadius: '16px' },
-          { transform: 'scale(1.08) translateY(-4vh)', borderRadius: '30px', offset: 0.25 },
-          { opacity: 0.6, transform: 'scale(0.5) translateY(50vh)', borderRadius: '45% 45% 30% 30%', offset: 0.55 },
-          { opacity: 0, transform: 'scale(0.05) translateY(90vh)', borderRadius: '50%' },
-        ],
-        { duration: 500, easing: 'cubic-bezier(0.68, -0.5, 0.32, 1.4)', fill: 'forwards' }
-      );
-      anim.onfinish = () => { setIsClosing(false); onClose(); };
+    if (isOpen) {
+      setShouldRender(true);
+      setAnimationClass('animate-mac-expand');
+    } else if (shouldRender) {
+      setAnimationClass('animate-mac-shrink');
+      const timer = setTimeout(() => { setShouldRender(false); setIsClosing(false); }, 380);
+      return () => clearTimeout(timer);
     }
-  }, [isClosing]);
+  }, [isOpen]);
 
   useEffect(() => {
     if (tracks && tracks.length > 0) setPlaylist(tracks);
   }, [tracks, setPlaylist]);
 
-  const handleClose = () => { setIsClosing(true); };
+  if (!currentTrack) return null;
+
+  const handleClose = () => { setIsClosing(true); if (onClose) onClose(); };
 
   const handleCycleMode = () => {
     const modes = ['off', 'all', 'one', 'shuffle'];
@@ -101,7 +82,6 @@ export const ActivePlayerModal = ({ isOpen, onClose, tracks = [] }) => {
     setTimeout(() => { playPrev(); setSlideDirection(''); setIsAnimating(false); }, 180);
   };
 
-  // --- Touch gestures on album art ---
   const onTouchStart = (e) => {
     const t = e.touches[0];
     touchStart.current = { x: t.clientX, y: t.clientY, time: Date.now() };
@@ -145,10 +125,8 @@ export const ActivePlayerModal = ({ isOpen, onClose, tracks = [] }) => {
     const dy = (e.changedTouches[0]?.clientY || start.y) - start.y;
 
     if (!touchType.current && elapsed < 250) {
-      // Tap detection
       const now = Date.now();
       if (now - lastTap.current < 300) {
-        // Double tap
         if (isPlaying) pauseTrack(); else playTrack(currentTrack);
         setRipple({ x: start.x, y: start.y, id: now });
         setTimeout(() => setRipple(null), 600);
@@ -171,7 +149,7 @@ export const ActivePlayerModal = ({ isOpen, onClose, tracks = [] }) => {
     setSwipeOffset(0);
   };
 
-  const formatTime = (time) => {
+    const formatTime = (time) => {
     if (!time || isNaN(time)) return '0:00';
     const mins = Math.floor(time / 60);
     const secs = Math.floor(time % 60);
@@ -179,16 +157,15 @@ export const ActivePlayerModal = ({ isOpen, onClose, tracks = [] }) => {
   };
 
   const progressPercent = duration > 0 ? Math.min(100, Math.max(0, (currentTime / duration) * 100)) : 0;
-  const activeColor = accentColor || '#f59e0b';
   const modalThemeClass = themeStyle === 'glass' ? 'glass' : 'theme-transparent';
 
-  if (!isOpen && !isClosing) return null;
+  if (!shouldRender && !isOpen) return null;
 
   return (
     <div
       ref={modalRef}
-      className={`${modalThemeClass} fixed inset-0 z-[200] bg-[#070913]/90 backdrop-blur-3xl flex flex-col justify-between p-6 select-none liquid-goo-active`}
-      style={{ color: textColor || '#ffffff', display: 'none' }}
+      className={modalThemeClass + ' fixed inset-0 z-[200] overflow-hidden rounded-none! bg-[#070913]/90 backdrop-blur-3xl flex flex-col justify-between p-6 select-none ' + animationClass}
+      style={{ color: textColor || '#ffffff' }}
     >
       <div className="flex items-center justify-between w-full max-w-md mx-auto">
         <button onClick={handleClose} className="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center transition-all active:scale-95">
@@ -196,7 +173,7 @@ export const ActivePlayerModal = ({ isOpen, onClose, tracks = [] }) => {
         </button>
         <span className="text-[10px] font-bold tracking-widest text-slate-400 uppercase">Playing Now</span>
         <div className="flex items-center gap-2">
-          <button onClick={() => setShowSpectrum(!showSpectrum)} className="w-9 h-9 rounded-full flex items-center justify-center transition-all bg-white/5 hover:bg-white/10" style={{ color: showSpectrum ? activeColor : '#94a3b8' }}>
+          <button onClick={() => setVisualizer(!visualizer)} className="w-9 h-9 rounded-full flex items-center justify-center transition-all bg-white/5 hover:bg-white/10" style={{ color: visualizer ? activeColor : '#94a3b8' }}>
             <Activity className="w-4 h-4" />
           </button>
           <button onClick={() => setShowEQ(!showEQ)} className="w-9 h-9 rounded-full flex items-center justify-center transition-all" style={{ backgroundColor: showEQ ? activeColor : 'rgba(255,255,255,0.05)', color: showEQ ? '#000' : '#cbd5e1' }}>
@@ -206,7 +183,17 @@ export const ActivePlayerModal = ({ isOpen, onClose, tracks = [] }) => {
       </div>
 
       <div className="flex-1 flex flex-col items-center justify-center my-4 max-w-md w-full mx-auto">
-        {showEQ ? (
+        <div
+          ref={eqPanelRef}
+          className="w-full"
+          style={{
+            overflow: 'hidden',
+            transition: 'max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease',
+            maxHeight: showEQ ? '400px' : '220px',
+            opacity: 1,
+          }}
+        >
+          {showEQ ? (
           <EqualizerPanel />
         ) : (
           <div className="w-full flex flex-col items-center gap-5">
@@ -216,7 +203,7 @@ export const ActivePlayerModal = ({ isOpen, onClose, tracks = [] }) => {
               onTouchEnd={onTouchEnd}
               className="w-64 h-64 sm:w-72 sm:h-72 rounded-3xl bg-slate-900 border border-white/15 shadow-2xl overflow-hidden relative cursor-grab active:cursor-grabbing"
               style={{
-                transform: `translateX(${swipeOffset}px) rotate(${swipeOffset * 0.02}deg)`,
+                transform: 'translateX(' + swipeOffset + 'px) rotate(' + (swipeOffset * 0.02) + 'deg)',
                 transition: gestureType === 'swipe' ? 'none' : 'transform 0.2s ease',
                 willChange: 'transform',
                 touchAction: 'none',
@@ -243,13 +230,14 @@ export const ActivePlayerModal = ({ isOpen, onClose, tracks = [] }) => {
                 <span key={ripple.id} className="absolute rounded-full border-2 border-white/60 animate-ping pointer-events-none" style={{ left: ripple.x - 40, top: ripple.y - 40, width: 80, height: 80 }} />
               )}
             </div>
-            {showSpectrum && (
-              <div className={`w-full h-12 p-2 border border-white/10 flex items-center justify-center overflow-hidden rounded-2xl ${themeStyle === 'glass' ? 'glass bg-white/5' : 'bg-white/5 backdrop-blur-md'}`}>
-                <canvas ref={canvasRef} className="w-full h-full" />
-              </div>
-            )}
+          <div className={'w-full overflow-hidden transition-all duration-300 ' + (visualizer ? 'max-h-20 opacity-100 mb-4' : 'max-h-0 opacity-0 mb-0')}>
+            <div className={'w-full h-14 p-1 border border-white/10 flex items-center justify-center overflow-hidden rounded-2xl ' + (themeStyle === 'glass' ? 'glass bg-white/5' : 'bg-white/5 backdrop-blur-md')}>
+              <VisualizerCanvas />
+            </div>
+          </div>
           </div>
         )}
+      </div>
       </div>
 
       <div className="w-full max-w-md mx-auto space-y-5">

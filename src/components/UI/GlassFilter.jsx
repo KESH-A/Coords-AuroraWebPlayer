@@ -4,7 +4,7 @@ export const GlassFilter = () => {
   return (
     <svg className="absolute w-0 h-0 overflow-hidden pointer-events-none" aria-hidden="true">
       <defs>
-        <filter id="lg" x="-20%" y="-20%" width="140%" height="140%">
+        <filter id="lg-legacy" x="-20%" y="-20%" width="140%" height="140%">
           <feTurbulence type="fractalNoise" baseFrequency="0.008 0.008" numOctaves="2" seed="5" result="noise" />
           <feDisplacementMap in="SourceGraphic" in2="noise" scale="20" xChannelSelector="R" yChannelSelector="G" />
         </filter>

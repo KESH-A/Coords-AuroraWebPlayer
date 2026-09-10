@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAudio } from '../../context/AudioContext';
 import { useSettings } from '../../context/SettingsContext';
+import { loadPersistedState, savePersistedState } from '../../utils/persistence';
 
 const PRESET_MAP = {
   Normal: [0, 0, 0, 0, 0],
@@ -19,11 +20,29 @@ export const EqualizerPanel = () => {
   const { setEQBands, setBassBoost: setAudioBass, setLoudness: setAudioLoudness } = useAudio() || {};
   const { accentColor, textColor, themeStyle } = useSettings();
 
-  const [eqEnabled, setEqEnabled] = useState(true);
-  const [selectedPreset, setSelectedPreset] = useState('Normal');
-  const [bandGains, setBandGains] = useState(PRESET_MAP.Normal);
-  const [bassBoost, setBassBoost] = useState(40);
-  const [loudness, setLoudness] = useState(60);
+  const loadEq = () => {
+    const s = loadPersistedState();
+    return {
+      eqEnabled: typeof s.eqEnabled === 'boolean' ? s.eqEnabled : true,
+      selectedPreset: s.selectedPreset || 'Normal',
+      bandGains: s.bandGains && Array.isArray(s.bandGains) ? s.bandGains : [...PRESET_MAP.Normal],
+      bassBoost: typeof s.bassBoost === 'number' ? s.bassBoost : 40,
+      loudness: typeof s.loudness === 'number' ? s.loudness : 60,
+    };
+  };
+  const [eqEnabled, setEqEnabled] = useState(loadEq().eqEnabled);
+  const [selectedPreset, setSelectedPreset] = useState(loadEq().selectedPreset);
+  const [bandGains, setBandGains] = useState(loadEq().bandGains);
+  const [bassBoost, setBassBoost] = useState(loadEq().bassBoost);
+  const [loudness, setLoudness] = useState(loadEq().loudness);
+
+  useEffect(() => {
+    savePersistedState({ ...loadPersistedState(), eqEnabled, selectedPreset, bandGains, bassBoost, loudness });
+  }, [eqEnabled, selectedPreset, bandGains, bassBoost, loudness]);
+
+  useEffect(() => {
+    if (eqEnabled && setEQBands) setEQBands(bandGains);
+  }, []);
 
   const applyGains = (gains) => {
     setBandGains(gains);
