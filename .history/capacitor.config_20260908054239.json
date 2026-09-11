@@ -1,0 +1,12 @@
+{
+  "appId": "com.aurora.player",
+  "appName": "Aurora Player",
+  "webDir": "dist",
+  "android": {
+    "allowMixedContent": false,
+    "captureInput": true
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}
